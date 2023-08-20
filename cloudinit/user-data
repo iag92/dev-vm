@@ -1,0 +1,64 @@
+#cloud-config
+fqdn: dev-vm
+users:
+  - name: devel
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    groups: sudo
+    lock_passwd: false
+    plain_text_passwd: devel
+disable_root: true
+ssh_genkeytypes: [rsa, dsa, ecdsa, ed25519]
+ssh_pwauth: true
+locale: en_US
+timezone: Europe/Moscow
+manage_etc_hosts: true
+growpart:
+  mode: auto
+  devices: ['/']
+  ignore_growroot_disabled: false
+packages:
+  - acpid
+  - curl
+  - wget
+  - perl
+  - python3
+  - vim
+  - git
+package_update: true
+package_upgrade: true
+runcmd:
+  - bash /run/preparevm.sh
+  - rm /run/preparevm.sh
+  - touch /etc/cloud/cloud-init.disabled
+write_files:
+  - path: /run/preparevm.sh
+    content: |
+      # prepare script here
+      grep -q "ubuntu" /etc/os-release || exit 0
+      # fix ssh group
+      grep -q "^_ssh:" /etc/group && groupmod -n ssh _ssh
+      grep -q "^ssh:" /etc/group || groupadd --system ssh
+      # fix ssh usedns
+      sed -i "s/#UseDNS no/UseDNS no/" /etc/ssh/sshd_config
+      # add ru locale
+      sed -i '/ru_RU.UTF-8/d' /etc/locale.gen
+      echo "ru_RU.UTF-8 UTF-8" >> /etc/locale.gen
+      locale-gen
+      # disable ipv6
+      echo "net.ipv6.conf.all.disable_ipv6=1" >> /etc/sysctl.conf
+      echo "net.ipv6.conf.default.disable_ipv6=1" >> /etc/sysctl.conf
+      echo "net.ipv6.conf.lo.disable_ipv6 = 1" >> /etc/sysctl.conf
+      # remove snapd
+      if dpkg -l | grep snapd; then
+        systemctl stop snapd
+        apt-get remove --purge -y snapd lxd*
+        apt-get autoremove -y
+        rm -r /root/snap &> /dev/null
+      fi
+      # ---
+    permissions: '0700'
+    defer: true
+power_state:
+  mode: poweroff
+
